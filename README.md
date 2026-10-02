@@ -21,7 +21,7 @@
 ```bash
 git clone https://github.com/codemashtab/hermes-techosmotr-ru
 cd hermes-techosmotr-ru
-./install.sh
+bash install.sh
 ```
 
 ## Как пользоваться
