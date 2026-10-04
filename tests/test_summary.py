@@ -14,3 +14,12 @@ def test_ok():
 def test_warn():
     t, c = summarize(WARN)
     assert c == 1 and "Нет файла настроек" in t and "sales" in t
+
+NOISY = {"status": "WARN", "checks": [{"name": "auth_surface", "severity": "WARN", "summary": "", "findings": [
+    {"id": "auth_surface.credential_pool", "severity": "WARN", "component": "auth_surface", "summary": "x",
+     "evidence": ["auth_surface.credential_pool", "hermes-agent/agent/credentials.py"]},
+    {"id": "skills.symlink_skipped", "severity": "WARN", "component": "skills", "summary": "x", "evidence": ["skills/a"]}]}]}
+
+def test_noise_hidden():
+    t, c = summarize(NOISY)
+    assert c == 0 and "в порядке" in t and "Служебных отметок (не проблемы): 2" in t
