@@ -47,6 +47,23 @@ RU = {
     "skills.link_missing": "Навык ссылается на отсутствующий файл", "skills.too_many": "Слишком много навыков — агент тратит лишние токены",
 }
 ORDER = ["OK", "UNKNOWN", "WARN", "FAIL", "NEEDS_APPROVAL"]
+CODE_EXT = (".py", ".pyc", ".js", ".mjs", ".ts", ".md", ".txt", ".json5")
+CODE_DIRS = ("/tests/", "/test/", "site-packages/", "hermes-agent/", "/src/", "node_modules/")
+
+
+def is_noise(f: dict) -> bool:
+    """Служебные отметки, а не проблемы: пропущенные симлинки и «подозрительные»
+    имена файлов, которые на деле являются исходным кодом самого Hermes."""
+    fid = f.get("id", "")
+    if fid.endswith(".symlink_skipped"):
+        return True
+    if f.get("component") == "auth_surface" and fid.startswith("auth_surface.") and fid not in (
+            "auth_surface.env_file", "auth_surface.private_key_like", "auth_surface.no_profiles"):
+        paths = [e for e in f.get("evidence", []) if "/" in e or "." in e]
+        path = paths[-1] if paths else ""
+        if path.endswith(CODE_EXT) or any(d in "/" + path for d in CODE_DIRS):
+            return True
+    return False
 
 
 def run_doctor(home: str) -> dict:
@@ -63,12 +80,18 @@ def run_doctor(home: str) -> dict:
 
 
 def summarize(rep: dict, full: bool = False) -> tuple[str, int]:
-    status = rep.get("status", "UNKNOWN")
+    raw = [f for c in rep.get("checks", []) for f in c.get("findings", [])
+           if f.get("severity") != "OK"]
+    findings = [f for f in raw if not is_noise(f)]
+    noise = len(raw) - len(findings)
+    status = max((f.get("severity", "UNKNOWN") for f in findings), key=ORDER.index, default="OK")
+    if not raw:
+        status = rep.get("status", "OK")
     icon, word = LEVEL.get(status, LEVEL["UNKNOWN"])
-    findings = [f for c in rep.get("checks", []) for f in c.get("findings", [])
-                if f.get("severity") != "OK"]
     findings.sort(key=lambda f: -ORDER.index(f.get("severity", "UNKNOWN")))
     lines = [f"{icon} Техосмотр агента: {word}.", f"Проверено разделов: {len(rep.get('checks', []))}, замечаний: {len(findings)}."]
+    if noise:
+        lines.append(f"Служебных отметок (не проблемы): {noise} — скрыты.")
     if findings:
         lines.append("")
         for f in findings[:8]:
@@ -85,7 +108,9 @@ def summarize(rep: dict, full: bool = False) -> tuple[str, int]:
     if full:
         lines.append("\nПо разделам:")
         for c in rep.get("checks", []):
-            ci, _ = LEVEL.get(c.get("severity"), LEVEL["UNKNOWN"])
+            real = [f for f in c.get("findings", []) if f.get("severity") != "OK" and not is_noise(f)]
+            sev = max((f.get("severity", "UNKNOWN") for f in real), key=ORDER.index, default="OK") if c.get("findings") else c.get("severity")
+            ci, _ = LEVEL.get(sev, LEVEL["UNKNOWN"])
             lines.append(f"{ci} {COMPONENTS.get(c['name'], c['name'])} — {c.get('summary', '')}")
     lines.append("\nДиагностика только читает: ничего не изменено и не перезапущено.")
     code = 0 if status == "OK" else (1 if status in ("WARN", "UNKNOWN") else 2)
